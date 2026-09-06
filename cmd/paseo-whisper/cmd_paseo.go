@@ -8,6 +8,7 @@ import (
 
 	"github.com/devXpro/paseo-whisper/internal/config"
 	"github.com/devXpro/paseo-whisper/internal/paseo"
+	"github.com/devXpro/paseo-whisper/internal/service"
 )
 
 // paseoCommand implements `paseo-whisper paseo <status|use|restart>`.
@@ -97,10 +98,9 @@ func paseoUse(ctx context.Context, engine string, f flags) error {
 		pc.UseWhisper(baseURL, name)
 		summary = fmt.Sprintf("whisper via %s (model %s)", baseURL, name)
 
-		if probe(baseURL) != "reachable" {
-			fmt.Printf("\n  note: nothing is answering on %s yet.\n", baseURL)
-			fmt.Printf("        start it with 'make run' or 'make install', or dictation will fail.\n")
-		}
+		// Dictation now depends on this server, so make sure it will be
+		// running after the next reboot rather than failing silently.
+		ensureAutostart(baseURL, f)
 
 	case "parakeet", "local":
 		name := f.modelPath // reuse --model as the Parakeet model id
@@ -127,6 +127,49 @@ func paseoUse(ctx context.Context, engine string, f flags) error {
 		return nil
 	}
 	return paseoRestart(ctx)
+}
+
+// ensureAutostart installs the login agent when Paseo has just been pointed at
+// a server that is not set up to run on its own.
+func ensureAutostart(baseURL string, f flags) {
+	state := service.Status()
+	reachable := probe(baseURL) == "reachable"
+
+	if state.Installed && state.Loaded {
+		if !reachable {
+			fmt.Printf("  the login agent is installed but not answering yet; it should come up shortly\n")
+		}
+		return
+	}
+
+	if f.noAutostart {
+		if !reachable {
+			fmt.Printf("\n  warning: nothing is answering on %s and autostart is disabled.\n", baseURL)
+			fmt.Printf("           dictation will fail until you run: paseo-whisper serve\n")
+		}
+		return
+	}
+
+	fmt.Println("  dictation now depends on this server, installing it as a login agent")
+	if err := installService(f); err != nil {
+		fmt.Printf("  could not install the login agent: %v\n", err)
+		fmt.Printf("  start the server manually, or dictation will fail after a reboot\n")
+		return
+	}
+	waitForServer(baseURL)
+}
+
+// waitForServer gives a freshly loaded agent a moment to bind, so the user is
+// told the truth about whether dictation will work right now.
+func waitForServer(baseURL string) {
+	for i := 0; i < 30; i++ {
+		if probe(baseURL) == "reachable" {
+			fmt.Printf("  server is up at %s\n\n", baseURL)
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	fmt.Printf("  server has not answered yet; check: paseo-whisper doctor\n\n")
 }
 
 func printRestartHint() {

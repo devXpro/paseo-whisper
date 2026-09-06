@@ -2,9 +2,6 @@ BINARY      := paseo-whisper
 BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -ldflags "-s -w -X main.version=$(VERSION)"
-PLIST       := com.devxpro.paseo-whisper.plist
-LAUNCH_DIR  := $(HOME)/Library/LaunchAgents
-INSTALL_DIR := $(HOME)/.local/bin
 
 .DEFAULT_GOAL := help
 .PHONY: help build run setup doctor install uninstall status logs test testdata fmt vet clean \
@@ -45,25 +42,14 @@ paseo-status: build ## Show which engine Paseo dictation uses
 paseo-restart: build ## Restart the Paseo daemon and warm agents
 	./$(BIN_DIR)/$(BINARY) paseo restart
 
-install: build ## Install the binary and start it at login via launchd
-	@mkdir -p $(INSTALL_DIR) $(LAUNCH_DIR)
-	cp $(BIN_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@sed -e 's|@BINARY@|$(INSTALL_DIR)/$(BINARY)|g' \
-	     -e 's|@LOGDIR@|$(HOME)/.config/paseo-whisper|g' \
-	     launchd/$(PLIST).in > $(LAUNCH_DIR)/$(PLIST)
-	@mkdir -p $(HOME)/.config/paseo-whisper
-	launchctl unload $(LAUNCH_DIR)/$(PLIST) 2>/dev/null || true
-	launchctl load -w $(LAUNCH_DIR)/$(PLIST)
-	@echo "installed and loaded. check: make status"
+install: build ## Install as a login agent (starts on login, restarts on crash)
+	./$(BIN_DIR)/$(BINARY) install --prompt-file terms.txt --save-clips
 
-uninstall: ## Stop the service and remove it
-	launchctl unload $(LAUNCH_DIR)/$(PLIST) 2>/dev/null || true
-	rm -f $(LAUNCH_DIR)/$(PLIST) $(INSTALL_DIR)/$(BINARY)
-	@echo "removed. config and models remain in ~/.config/paseo-whisper"
+uninstall: build ## Stop the login agent and remove it
+	./$(BIN_DIR)/$(BINARY) uninstall
 
-status: ## Show whether the service is running and healthy
-	@launchctl list | grep -q paseo-whisper && echo "launchd: loaded" || echo "launchd: not loaded"
-	@curl -fsS http://127.0.0.1:8099/health 2>/dev/null || echo "health:  not responding on :8099"
+status: build ## Show engine, models, service state and config
+	./$(BIN_DIR)/$(BINARY) doctor
 
 logs: ## Tail the service and engine logs
 	tail -f $(HOME)/.config/paseo-whisper/*.log

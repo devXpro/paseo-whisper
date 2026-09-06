@@ -18,6 +18,7 @@ import (
 	"github.com/devXpro/paseo-whisper/internal/discover"
 	"github.com/devXpro/paseo-whisper/internal/model"
 	"github.com/devXpro/paseo-whisper/internal/server"
+	"github.com/devXpro/paseo-whisper/internal/service"
 	"github.com/devXpro/paseo-whisper/internal/whisper"
 	"github.com/devXpro/paseo-whisper/internal/wizard"
 )
@@ -26,21 +27,22 @@ import (
 var version = "dev"
 
 type flags struct {
-	modelPath  string
-	source     string
-	link       string
-	promptFile string
-	engine     string
-	language   string
-	port       int
-	threads    int
-	yes        bool
-	reset      bool
-	restart    bool
-	saveClips  bool
-	write      bool
-	minCount   int
-	limit      int
+	modelPath   string
+	source      string
+	link        string
+	promptFile  string
+	engine      string
+	language    string
+	port        int
+	threads     int
+	yes         bool
+	reset       bool
+	restart     bool
+	saveClips   bool
+	write       bool
+	minCount    int
+	limit       int
+	noAutostart bool
 }
 
 func main() {
@@ -84,6 +86,7 @@ func run() error {
 	fs.BoolVar(&f.write, "write", false, "write the scanned vocabulary to the prompt file")
 	fs.IntVar(&f.minCount, "min-count", 0, "ignore terms seen fewer times than this when scanning")
 	fs.IntVar(&f.limit, "limit", 0, "how many terms to keep when scanning")
+	fs.BoolVar(&f.noAutostart, "no-autostart", false, "do not install the login agent when switching Paseo to whisper")
 	fs.Usage = usage(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -102,6 +105,10 @@ func run() error {
 		ctx, cancel := signalContext()
 		defer cancel()
 		return paseoCommand(ctx, sub, args, f)
+	case "install":
+		return installService(f)
+	case "uninstall":
+		return uninstallService()
 	case "clips":
 		return clipsCommand(sub, args)
 	case "terms":
@@ -113,7 +120,7 @@ func run() error {
 		fs.Usage()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, paseo, clips, terms, version)", command)
+		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, install, uninstall, paseo, clips, terms, version)", command)
 	}
 }
 
@@ -148,6 +155,8 @@ Commands:
   clips path <n>           Print the path to a saved recording
   terms scan               Mine your chat history for domain vocabulary
   terms show               Print the current vocabulary and its token cost
+  install                  Run at login via launchd, restarting on crash
+  uninstall                Remove the login agent
   version                  Print the version
 
 Examples:
@@ -360,7 +369,11 @@ func serve(f flags, log *slog.Logger) error {
 	}()
 
 	log.Info("ready", "endpoint", "http://"+addr+"/v1/audio/transcriptions")
-	fmt.Printf("\n  Point Paseo at:  http://%s/v1\n\n", addr)
+	fmt.Printf("\n  Point Paseo at:  http://%s/v1\n", addr)
+	if st := service.Status(); !st.Installed {
+		fmt.Printf("  Not set to start at login. Install with:  paseo-whisper install\n")
+	}
+	fmt.Println()
 
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -407,6 +420,8 @@ func doctor(f flags) error {
 			}
 		}
 	}
+
+	fmt.Printf("\n  service: %s\n", describeService())
 
 	fmt.Println()
 	if cfg, ok := config.Load(); ok {

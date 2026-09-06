@@ -128,16 +128,64 @@ paseo-whisper version
 
 `doctor` is the first thing to run when something looks wrong.
 
+## Running it permanently
+
+Dictation breaks silently if the server is not up, so switching Paseo to
+whisper installs a launchd agent automatically:
+
+```sh
+paseo-whisper paseo use whisper     # also installs the agent, unless --no-autostart
+paseo-whisper install               # or install it explicitly
+paseo-whisper uninstall
+```
+
+The agent starts at login, restarts itself if the process dies
+(`KeepAlive` on non-clean exit, throttled to once per 10s), and logs to
+`~/.config/paseo-whisper/service.log`.
+
+Installing copies both the binary and the vocabulary out of the working tree:
+
+```
+binary: ~/.local/bin/paseo-whisper
+terms:  ~/.config/paseo-whisper/terms.txt
+plist:  ~/Library/LaunchAgents/com.devxpro.paseo-whisper.plist
+```
+
+That matters — an agent pointing into a cloned repository breaks the moment you
+move or delete that directory. After installing you can throw the checkout away.
+
+### Why a login agent, and not tied to Paseo
+
+Paseo has no daemon lifecycle hook to attach to: `paseo hooks` records agent
+activity, and the config schema has no startup script. Patching the app bundle
+would not survive an auto-update.
+
+A login agent sidesteps all of that. Both processes start when you log in, and
+the server sits idle at **0% CPU** until audio arrives, so nothing is wasted by
+having it always available.
+
+It runs as *your* user, which means it is not running while nobody is logged
+in — correct, since Paseo is not running then either.
+
+`doctor` distinguishes the three ways this can be broken:
+
+```
+service: not installed          → run: paseo-whisper install
+service: installed but not loaded → launchctl rejected it; check service.log
+service: installed and loaded   → agent is live
+```
+
 ## Make targets
 
 ```sh
 make build      # build into ./bin
-make run        # build and start
-make setup      # run the wizard
-make doctor     # diagnostics
-make install    # install to ~/.local/bin and start at login via launchd
-make uninstall  # stop and remove the service
-make status     # is it loaded, is it healthy
+make run        # build and start in the foreground
+make setup      # choose where the model comes from
+make doctor     # engine, CPU, models, service state, config
+make install    # run at login via launchd
+make uninstall  # stop and remove the agent
+make status     # same as doctor
+make terms      # mine your chat history for vocabulary
 make clips      # list saved recordings
 make logs       # tail service and engine logs
 make test
