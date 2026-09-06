@@ -41,7 +41,7 @@ type Supervisor struct {
 // New creates a supervisor. Call Start to launch the process.
 func New(opts Options, log *slog.Logger) *Supervisor {
 	if opts.Threads <= 0 {
-		opts.Threads = 4
+		opts.Threads = DefaultThreads()
 	}
 	if opts.Language == "" {
 		opts.Language = "auto"

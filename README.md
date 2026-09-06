@@ -105,10 +105,11 @@ never hangs waiting for input.
 | `--model-source` | `auto` \| `superwhisper` \| `download` \| `path` |
 | `--link` | `hardlink` (default) \| `copy` \| `none` |
 | `--port N` | listen port, default `8099` |
-| `--threads N` | engine threads, default `8` |
+| `--threads N` | engine threads; omit to size automatically |
 | `--language` | `auto` (default) or an ISO code like `ru` |
 | `--prompt-file` | vocabulary hints, see below |
 | `--engine PATH` | explicit `whisper-server` path |
+| `--save-clips` | keep recordings and transcripts for replay |
 | `--yes` | never prompt |
 | `--reset` | ignore the saved config and choose again |
 
@@ -137,6 +138,7 @@ make doctor     # diagnostics
 make install    # install to ~/.local/bin and start at login via launchd
 make uninstall  # stop and remove the service
 make status     # is it loaded, is it healthy
+make clips      # list saved recordings
 make logs       # tail service and engine logs
 make test
 ```
@@ -252,6 +254,25 @@ paseo-whisper serve --model ~/models/ggml-custom.bin   # your own file
 `auto` prefers a turbo build already on the machine — superwhisper ships one —
 and only downloads when nothing usable is found.
 
+### Threads
+
+Left alone, the engine sizes itself: it reads the number of performance cores
+and leaves two of them free, clamped to 4-8 threads.
+
+More is not better. Measured on an M4 Pro (10 performance + 4 efficiency cores)
+with a 12s Russian clip:
+
+| threads | time |
+|---|---|
+| 6 | 4.78s |
+| **8** | **3.39s** |
+| 10 | 4.11s |
+| 14 | 7.00s |
+
+The model waits on its slowest worker, so scheduling onto efficiency cores
+hurts, and past a point synchronisation costs more than the extra parallelism
+buys. `--threads N` overrides the automatic choice if your machine disagrees.
+
 ## Vocabulary hints
 
 Whisper accepts an initial prompt that biases spelling. This is how you teach
@@ -285,6 +306,37 @@ with a leading space and a trailing newline; that is trimmed here.
 Everything lives in `~/.config/paseo-whisper/`: `config.json`, `models/`,
 `engine.log`, and `service.log` when running under launchd.
 
+## Saved clips
+
+When a transcription comes out wrong, the useful question is whether the model
+misheard or whether it never received the whole sentence. Paseo splits audio
+into segments with its own VAD before sending them, so a phrase can arrive
+already cut in half.
+
+```sh
+paseo-whisper serve --save-clips --yes
+```
+
+Every recording is kept alongside its transcript in
+`~/.config/paseo-whisper/clips/`, most recent 50:
+
+```sh
+paseo-whisper clips list        # what was heard, and what came out
+paseo-whisper clips play 1      # listen to the last one
+paseo-whisper clips path 1      # print the path, to pipe elsewhere
+```
+
+Replay a clip against different settings without dictating again:
+
+```sh
+curl -F "file=@$(paseo-whisper clips path 1)" \
+     -F "prompt=$(grep -v '^#' terms.txt | tr '\n' ' ')" \
+     http://127.0.0.1:8099/v1/audio/transcriptions
+```
+
+If the audio itself is truncated, the model is not the problem and no prompt
+will fix it.
+
 ## Troubleshooting
 
 **`whisper-server not found`** — `brew install whisper-cpp`, or pass
@@ -301,7 +353,22 @@ v2. Check `features.dictation.stt.provider` and confirm the daemon restarted.
 **`engine is still loading the model`** — a large model needs a few seconds on
 first start. `curl 127.0.0.1:8099/health` reports `loading` until it is ready.
 
-**Slow transcription** — check the engine log for the backend it chose:
+**Slow transcription — check system load first.** This is the most likely
+cause by far, and it has nothing to do with Whisper:
+
+```sh
+uptime                    # load average
+top -l 2 -n 5 -o cpu      # who is eating the CPU
+```
+
+A stuck macOS daemon can hold a core or two for days. On the machine this was
+built on, `searchpartyuseragent` and `FindMy` had been burning ~1.5 cores for
+four days straight, and dictation took 4.3s per phrase. After
+`killall FindMy searchpartyuseragent` the same phrases took **0.7s** — a 6x
+difference from one background process, with no configuration change at all.
+Those daemons restart themselves cleanly, so killing them is safe.
+
+Only once the machine is actually idle is it worth looking at the engine:
 ```sh
 grep backend ~/.config/paseo-whisper/engine.log
 ```

@@ -26,6 +26,9 @@ type Options struct {
 	Addr          string
 	DefaultPrompt string
 	ModelName     string
+	// ClipsDir, when set, is where each recording and its transcript are kept
+	// so a bad result can be replayed instead of re-dictated.
+	ClipsDir string
 }
 
 // Server translates OpenAI transcription requests into whisper.cpp calls.
@@ -110,24 +113,42 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Buffer the audio so it can be saved as well as forwarded. Dictation
+	// clips are seconds long, so this costs little.
+	audio, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read audio: "+err.Error())
+		return
+	}
+
 	// The client's prompt wins; ours is the fallback vocabulary hint.
 	prompt := r.FormValue("prompt")
 	if prompt == "" {
 		prompt = s.opts.DefaultPrompt
 	}
+	language := r.FormValue("language")
 
-	body, contentType, err := buildUpstreamForm(file, header.Filename, r.FormValue("language"), prompt)
+	body, contentType, err := buildUpstreamForm(bytes.NewReader(audio), header.Filename, language, prompt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "build upstream request: "+err.Error())
 		return
 	}
 
+	started := time.Now()
 	text, err := s.transcribe(r.Context(), body, contentType)
 	if err != nil {
 		s.log.Error("transcription failed", "err", err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+
+	s.saveClip(audio, header.Filename, Clip{
+		Recorded: started,
+		Text:     text,
+		Prompt:   prompt,
+		Language: language,
+		Millis:   time.Since(started).Milliseconds(),
+	})
 
 	writeJSON(w, http.StatusOK, map[string]any{"text": text})
 }

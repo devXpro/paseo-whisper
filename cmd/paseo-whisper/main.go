@@ -37,6 +37,7 @@ type flags struct {
 	yes        bool
 	reset      bool
 	restart    bool
+	saveClips  bool
 }
 
 func main() {
@@ -55,7 +56,7 @@ func run() error {
 	if len(args) > 0 && !isFlag(args[0]) {
 		command, args = args[0], args[1:]
 		// Two-word commands: "model download", "paseo use".
-		if command == "paseo" && len(args) > 0 && !isFlag(args[0]) {
+		if (command == "paseo" || command == "clips") && len(args) > 0 && !isFlag(args[0]) {
 			sub, args = args[0], args[1:]
 		}
 	}
@@ -73,6 +74,7 @@ func run() error {
 	fs.BoolVar(&f.yes, "yes", false, "never prompt; resolve everything from flags and defaults")
 	fs.BoolVar(&f.reset, "reset", false, "ignore the saved config and choose again")
 	fs.BoolVar(&f.restart, "restart", false, "restart the Paseo daemon after changing its config")
+	fs.BoolVar(&f.saveClips, "save-clips", false, "keep each recording and its transcript for later replay")
 	fs.Usage = usage(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -91,6 +93,8 @@ func run() error {
 		ctx, cancel := signalContext()
 		defer cancel()
 		return paseoCommand(ctx, sub, args, f)
+	case "clips":
+		return clipsCommand(sub, args)
 	case "version":
 		fmt.Printf("paseo-whisper %s\n", version)
 		return nil
@@ -98,7 +102,7 @@ func run() error {
 		fs.Usage()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, paseo, version)", command)
+		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, paseo, clips, version)", command)
 	}
 }
 
@@ -128,6 +132,9 @@ Commands:
   paseo use whisper        Point Paseo dictation at this server
   paseo use parakeet       Restore Paseo's built-in engine
   paseo restart            Restart the Paseo daemon and warm agents
+  clips list               List saved recordings and their transcripts
+  clips play <n>           Play back a saved recording
+  clips path <n>           Print the path to a saved recording
   version                  Print the version
 
 Examples:
@@ -151,6 +158,9 @@ func resolve(ctx context.Context, f flags, log *slog.Logger) (config.Config, err
 	cfg.ApplyEnv()
 	applyFlags(&cfg, f)
 
+	if f.saveClips {
+		cfg.SaveClips = true
+	}
 	if f.promptFile != "" {
 		prompt, err := config.LoadPromptFile(f.promptFile)
 		if err != nil {
@@ -310,10 +320,17 @@ func serve(f flags, log *slog.Logger) error {
 	defer engine.Stop()
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+	clipsDir := ""
+	if cfg.SaveClips {
+		clipsDir = config.ClipsDir()
+		log.Info("saving clips", "dir", clipsDir)
+	}
+
 	api := server.New(server.Options{
 		Addr:          addr,
 		DefaultPrompt: cfg.Prompt,
 		ModelName:     cfg.ModelName,
+		ClipsDir:      clipsDir,
 	}, engine, log)
 
 	httpServer := &http.Server{
@@ -352,6 +369,14 @@ func doctor(f flags) error {
 		fmt.Println()
 	}
 
+	total, perf, eff := whisper.CoreSummary()
+	if perf > 0 {
+		fmt.Printf("  cpu:     %d cores (%d performance, %d efficiency)\n", total, perf, eff)
+	} else {
+		fmt.Printf("  cpu:     %d cores\n", total)
+	}
+	fmt.Printf("  threads: %d (auto)\n", whisper.DefaultThreads())
+
 	fmt.Println()
 	found := discover.Models()
 	if len(found) == 0 {
@@ -373,7 +398,12 @@ func doctor(f flags) error {
 	fmt.Println()
 	if cfg, ok := config.Load(); ok {
 		fmt.Printf("  config:  %s\n", cfg.ModelPath)
-		fmt.Printf("           port %d, threads %d, language %s\n", cfg.Port, cfg.Threads, cfg.Language)
+		threads := cfg.Threads
+		note := ""
+		if threads <= 0 {
+			threads, note = whisper.DefaultThreads(), " (auto)"
+		}
+		fmt.Printf("           port %d, threads %d%s, language %s\n", cfg.Port, threads, note, cfg.Language)
 	} else {
 		fmt.Println("  config:  not set up yet (run: paseo-whisper setup)")
 	}

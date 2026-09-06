@@ -39,6 +39,7 @@ type Config struct {
 	Language   string         `json:"language"`
 	Prompt     string         `json:"prompt"`
 	EnginePath string         `json:"engine_path"`
+	SaveClips  bool           `json:"save_clips"`
 }
 
 // Defaults returns a config with sensible values filled in.
@@ -47,7 +48,8 @@ func Defaults() Config {
 		Source:   SourceAuto,
 		LinkMode: model.LinkHard,
 		Port:     8099,
-		Threads:  8,
+		// Threads stays 0 so the engine can size itself to this machine.
+		Threads:  0,
 		Language: "auto",
 	}
 }
@@ -64,6 +66,11 @@ func Dir() string {
 // ModelsDir is where downloaded or linked models live.
 func ModelsDir() string {
 	return filepath.Join(Dir(), "models")
+}
+
+// ClipsDir is where saved recordings and their transcripts live.
+func ClipsDir() string {
+	return filepath.Join(Dir(), "clips")
 }
 
 func path() string {
@@ -110,6 +117,9 @@ func (c *Config) ApplyEnv() {
 	}
 	if v := os.Getenv("PASEO_WHISPER_PROMPT"); v != "" {
 		c.Prompt = v
+	}
+	if os.Getenv("PASEO_WHISPER_SAVE_CLIPS") != "" {
+		c.SaveClips = true
 	}
 }
 
