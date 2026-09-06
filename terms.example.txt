@@ -1,0 +1,16 @@
+# Vocabulary hints for transcription.
+# One term or phrase per line; blank lines and # comments are ignored.
+# Whisper uses this as an initial prompt, which biases it towards these
+# spellings. Keep it under ~200 words: longer prompts start to hurt.
+
+# Tools
+Docker, Docker Compose, Postgres, Redis, MongoDB, Kubernetes, Grafana
+Paseo, Claude Code, Codex, Cursor, OpenCode
+
+# Git
+коммит, закоммитить, запушить, ребейз, заребейзить, смёржить, пулл реквест
+черри-пик, стейджинг, ветка, форс-пуш
+
+# Common jargon
+деплой, задеплоить, воркспейс, эндпоинт, миграция, линтер, хендлер
+бекенд, фронтенд, мидлварь, рефакторинг, отрефакторить

@@ -1,0 +1,24 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts
+/bin/
+*.test
+*.out
+
+# Runtime data
+/models/
+*.log
+config.json
+
+# Personal vocabulary; terms.example.txt is the template
+/terms.txt
+
+# Generated test audio, rebuild with: make testdata
+testdata/*.wav
+testdata/*.aiff
+
+# macOS
+.DS_Store
