@@ -38,6 +38,9 @@ type flags struct {
 	reset      bool
 	restart    bool
 	saveClips  bool
+	write      bool
+	minCount   int
+	limit      int
 }
 
 func main() {
@@ -56,8 +59,11 @@ func run() error {
 	if len(args) > 0 && !isFlag(args[0]) {
 		command, args = args[0], args[1:]
 		// Two-word commands: "model download", "paseo use".
-		if (command == "paseo" || command == "clips") && len(args) > 0 && !isFlag(args[0]) {
-			sub, args = args[0], args[1:]
+		switch command {
+		case "paseo", "clips", "terms":
+			if len(args) > 0 && !isFlag(args[0]) {
+				sub, args = args[0], args[1:]
+			}
 		}
 	}
 
@@ -75,6 +81,9 @@ func run() error {
 	fs.BoolVar(&f.reset, "reset", false, "ignore the saved config and choose again")
 	fs.BoolVar(&f.restart, "restart", false, "restart the Paseo daemon after changing its config")
 	fs.BoolVar(&f.saveClips, "save-clips", false, "keep each recording and its transcript for later replay")
+	fs.BoolVar(&f.write, "write", false, "write the scanned vocabulary to the prompt file")
+	fs.IntVar(&f.minCount, "min-count", 0, "ignore terms seen fewer times than this when scanning")
+	fs.IntVar(&f.limit, "limit", 0, "how many terms to keep when scanning")
 	fs.Usage = usage(fs)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -95,6 +104,8 @@ func run() error {
 		return paseoCommand(ctx, sub, args, f)
 	case "clips":
 		return clipsCommand(sub, args)
+	case "terms":
+		return termsCommand(sub, args, f)
 	case "version":
 		fmt.Printf("paseo-whisper %s\n", version)
 		return nil
@@ -102,7 +113,7 @@ func run() error {
 		fs.Usage()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, paseo, clips, version)", command)
+		return fmt.Errorf("unknown command %q (try: serve, setup, doctor, paseo, clips, terms, version)", command)
 	}
 }
 
@@ -135,6 +146,8 @@ Commands:
   clips list               List saved recordings and their transcripts
   clips play <n>           Play back a saved recording
   clips path <n>           Print the path to a saved recording
+  terms scan               Mine your chat history for domain vocabulary
+  terms show               Print the current vocabulary and its token cost
   version                  Print the version
 
 Examples:

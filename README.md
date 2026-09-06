@@ -275,18 +275,70 @@ buys. `--threads N` overrides the automatic choice if your machine disagrees.
 
 ## Vocabulary hints
 
-Whisper accepts an initial prompt that biases spelling. This is how you teach
-it project jargon that it would otherwise mangle:
+Whisper accepts an *initial prompt*: text that the decoder treats as what was
+said just before. Because the model was trained to continue transcripts
+coherently, it carries that text's spelling, casing and script forward. Feed it
+`Postgres` and it writes `Postgres` rather than "постгрес".
+
+This is a bias, not a rule. The model may ignore it, and the budget is small:
+**224 tokens**, which Cyrillic burns roughly twice as fast as Latin.
+
+### Mine it from your own chat history
+
+A generic word list is worthless — what matters is the jargon *you* use. The
+binary reads your Claude Code transcripts and counts what you actually say:
 
 ```sh
-cp terms.example.txt terms.txt
-paseo-whisper serve --prompt-file terms.txt --yes
+paseo-whisper terms scan              # preview
+paseo-whisper terms scan --write      # write terms.txt
+paseo-whisper terms show              # current file and its token cost
 ```
 
-Blank lines and `#` comments are stripped. Keep the result under roughly 200
-words — longer prompts start to degrade accuracy rather than help.
+It reads `~/.claude/projects` plus any per-project `.claude-data/projects`
+directories, looks only at your own messages, discards tooling noise and
+pasted logs, drops common words in both languages, and reports the token cost
+so you know how close to the ceiling you are.
 
-A per-request `prompt` field, if the client sends one, overrides the file.
+Tune the aggressiveness:
+
+```sh
+paseo-whisper terms scan --min-count 5 --limit 80
+```
+
+The output is ordered with the **most frequent terms last**, because Whisper
+weighs the tail of a prompt more heavily.
+
+What comes out is specific to you. A backend developer working in Russian might
+get something like this — note the same word in two spellings, because both get
+said out loud, and the transliterations that no generic list would contain:
+
+```
+воркспейс, эндпоинт, миграция, хендлер, линтер, рантайм, кеш, конфиг
+докер, компоуз, постгрес, редис, кубер, графана, нгинкс, мидлварь
+комить, коммить, запушь, заребейзь, смёржи, задеплой, юзать, мемори
+```
+
+It also picks up how you actually talk, including the words you would never put
+in a curated list. That is the point: the model biases towards what it expects
+to hear, so the prompt should match your speech, not your idea of professional
+vocabulary.
+
+### Writing one by hand
+
+If you prefer to curate it, three rules from experience:
+
+1. **Only include what actually breaks.** `Docker` and `Redis` are already
+   known to the model; listing them burns budget for nothing.
+2. **Use the exact forms you speak.** Russian imperatives are what get said out
+   loud — `заребейзь`, not the infinitive `заребейзить`. Biasing matches
+   strings, so the wrong form misses entirely.
+3. **Put the worst offenders last**, where the prompt carries most weight.
+
+Blank lines and `#` comments are stripped. A per-request `prompt` field, if the
+client sends one, overrides the file.
+
+The prompt is free in wall-clock terms: measured at 3.39s with it and 3.40s
+without, so there is no reason to keep it short beyond the token ceiling.
 
 ## How it works
 

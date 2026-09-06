@@ -8,7 +8,7 @@ INSTALL_DIR := $(HOME)/.local/bin
 
 .DEFAULT_GOAL := help
 .PHONY: help build run setup doctor install uninstall status logs test testdata fmt vet clean \
-        use-whisper use-parakeet paseo-status paseo-restart clips
+        use-whisper use-parakeet paseo-status paseo-restart clips terms
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -32,6 +32,9 @@ use-whisper: build ## Point Paseo dictation at this server
 
 use-parakeet: build ## Restore Paseo's built-in Parakeet engine
 	./$(BIN_DIR)/$(BINARY) paseo use parakeet
+
+terms: build ## Mine your chat history for domain vocabulary
+	./$(BIN_DIR)/$(BINARY) terms scan
 
 clips: build ## List saved recordings and their transcripts
 	./$(BIN_DIR)/$(BINARY) clips list
