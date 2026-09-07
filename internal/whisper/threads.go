@@ -8,7 +8,9 @@ import (
 )
 
 // Thread count bounds. Below four the engine leaves obvious performance on the
-// table; above eight synchronisation overhead starts to dominate.
+// table; above eight synchronisation overhead starts to dominate. On machines
+// with fewer cores than minThreads the core count wins, so the real floor is
+// min(minThreads, cores).
 const (
 	minThreads = 4
 	maxThreads = 8
@@ -28,6 +30,9 @@ const (
 // scheduling onto efficiency cores hurts, and past a point the synchronisation
 // cost outweighs the extra parallelism. Leaving two performance cores free for
 // the rest of the system reproduced the measured optimum, so that is the rule.
+//
+// The result is clamped to [minThreads, maxThreads], then capped at the core
+// count: a two-core machine gets two threads, not four.
 func DefaultThreads() int {
 	cores := performanceCores()
 	if cores <= 0 {
