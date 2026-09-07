@@ -1,5 +1,7 @@
 # paseo-whisper
 
+[![CI](https://github.com/devXpro/paseo-whisper/actions/workflows/ci.yml/badge.svg)](https://github.com/devXpro/paseo-whisper/actions/workflows/ci.yml)
+
 Local Whisper transcription for [Paseo](https://paseo.sh) dictation. Runs an
 OpenAI-compatible endpoint on `127.0.0.1`, backed by
 [whisper.cpp](https://github.com/ggml-org/whisper.cpp), so your voice never
